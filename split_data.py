@@ -5,12 +5,6 @@ import random
 BASE_DIR = r'C:\Users\26281\kc_dog_and_cat'
 file_path = os.path.join(BASE_DIR, 'data')
 
-# 获取data文件夹下所有子文件夹（原始类别：cat、dog）
-flower_class = [cla for cla in os.listdir(file_path)
-                if os.path.isdir(os.path.join(file_path, cla))]
-
-print(f"检测到原始类别: {flower_class}")
-
 # 清理旧的 train/val（绝对路径，避免脏目录）
 train_dir = os.path.join(file_path, 'train')
 val_dir = os.path.join(file_path, 'val')
@@ -18,6 +12,15 @@ if os.path.exists(train_dir):
     rmtree(train_dir)
 if os.path.exists(val_dir):
     rmtree(val_dir)
+
+# 获取data文件夹下所有子文件夹（原始类别：cat、dog）
+# 排除 train 和 val，防止把它们当作类别目录
+SKIP_DIRS = {'train', 'val'}
+flower_class = [cla for cla in os.listdir(file_path)
+                if os.path.isdir(os.path.join(file_path, cla))
+                and cla not in SKIP_DIRS]
+
+print(f"检测到原始类别: {flower_class}")
 
 # 创建 train 和 val 目录（绝对路径）
 for cla in flower_class:

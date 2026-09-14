@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+save_model/*.pth
+data/
+static/uploads/*
+static/val_images/*
+predict_history.json
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

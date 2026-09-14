@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猫狗分类器 - Cat & Dog Classifier</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 960px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        h1 { text-align: center; color: #333; margin-bottom: 8px; font-size: 30px; }
+        .subtitle { text-align: center; color: #888; margin-bottom: 30px; font-size: 14px; }
+
+        /* ===== 通用分隔线 ===== */
+        .section-divider {
+            margin: 50px 0 22px;
+            text-align: center;
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+            position: relative;
+        }
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            display: inline-block;
+            width: 60px;
+            height: 1px;
+            background: #ddd;
+            vertical-align: middle;
+            margin: 0 15px;
+        }
+
+        /* ===== 准确率仪表盘 ===== */
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            border-radius: 16px;
+            padding: 28px 32px;
+            margin-bottom: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .gauge {
+            width: 110px; height: 110px; border-radius: 50%;
+            background: conic-gradient(#27ae60 0%, #27ae60 var(--acc), #ecf0f1 var(--acc), #ecf0f1 360deg);
+            display: flex; justify-content: center; align-items: center;
+            flex-shrink: 0; position: relative;
+        }
+        .gauge::before {
+            content: ''; width: 82px; height: 82px; background: #fff;
+            border-radius: 50%; position: absolute;
+        }
+        .gauge-value { position: relative; z-index: 1; font-size: 22px; font-weight: bold; color: #27ae60; }
+        .gauge-label { position: relative; z-index: 1; font-size: 11px; color: #888; margin-top: 18px; }
+        .gauge-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+        .stats-info { flex: 1; min-width: 200px; }
+        .stats-title { font-size: 16px; color: #333; font-weight: 600; margin-bottom: 8px; }
+        .stats-detail { font-size: 14px; color: #666; line-height: 1.8; }
+        .stats-detail span { color: #27ae60; font-weight: bold; }
+        .stats-detail .bad { color: #e74c3c; }
+
+        /* ===== 上传区 ===== */
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fafafa;
+        }
+        .upload-area:hover, .upload-area.dragover { border-color: #667eea; background: #f0f0ff; }
+        .upload-icon { font-size: 48px; margin-bottom: 15px; }
+        .upload-text { color: #666; font-size: 16px; }
+        .upload-hint { color: #aaa; font-size: 12px; margin-top: 8px; }
+        #file-input { display: none; }
+
+        .preview-section { margin-top: 30px; display: none; }
+        .preview-section.active { display: block; }
+
+        .image-wrapper { position: relative; border-radius: 15px; overflow: hidden; text-align: center; background: #000; }
+        .image-wrapper img { max-width: 100%; max-height: 350px; display: block; margin: 0 auto; }
+
+        .loading {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.85);
+            display: flex; justify-content: center; align-items: center;
+            flex-direction: column; gap: 10px;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #eee;
+            border-top-color: #667eea; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .result-box { margin-top: 25px; border-radius: 15px; padding: 25px; text-align: center; }
+        .result-box.cat { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); }
+        .result-box.dog { background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); }
+        .result-label { font-size: 14px; color: #666; margin-bottom: 5px; }
+        .result-animal { font-size: 48px; font-weight: bold; margin-bottom: 10px; }
+        .cat .result-animal { color: #e74c3c; }
+        .dog .result-animal { color: #2980b9; }
+        .confidence { font-size: 16px; color: #555; margin-bottom: 15px; }
+
+        .prob-bar-container { margin-top: 15px; }
+        .prob-row { margin: 8px 0; display: flex; align-items: center; gap: 10px; }
+        .prob-label { width: 50px; font-size: 14px; font-weight: 600; }
+        .prob-bar { flex: 1; height: 12px; background: rgba(255,255,255,0.6); border-radius: 6px; overflow: hidden; }
+        .prob-fill { height: 100%; border-radius: 6px; transition: width 0.8s ease; }
+        .cat-fill { background: #e74c3c; }
+        .dog-fill { background: #2980b9; }
+        .prob-value { width: 60px; font-size: 13px; color: #555; text-align: right; }
+
+        .error-box {
+            margin-top: 20px; background: #ffeaea; border: 1px solid #ffc1c1;
+            color: #c0392b; padding: 15px; border-radius: 10px;
+            display: none; text-align: center;
+        }
+        .error-box.active { display: block; }
+
+        .btn-retry {
+            margin-top: 25px; width: 100%; padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff; border: none; border-radius: 12px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-retry:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+
+        /* ===== 历史统计区 ===== */
+        .history-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+        .history-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+        .history-card .h-num { font-size: 28px; font-weight: bold; color: #333; }
+        .history-card .h-num.cat { color: #e74c3c; }
+        .history-card .h-num.dog { color: #2980b9; }
+        .history-card .h-num.conf { color: #667eea; }
+        .history-card .h-label { font-size: 12px; color: #888; margin-top: 4px; }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .chart-box {
+            background: #fafafa;
+            border-radius: 14px;
+            padding: 20px;
+            border: 1px solid #eee;
+        }
+        .chart-title { font-size: 14px; color: #555; font-weight: 600; margin-bottom: 12px; text-align: center; }
+        .chart-box canvas { width: 100% !important; }
+
+        .empty-history {
+            text-align: center;
+            padding: 40px 20px;
+            color: #aaa;
+            font-size: 14px;
+        }
+
+        .history-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
+        .btn-clear {
+            padding: 8px 18px;
+            background: #fff;
+            border: 1px solid #e74c3c;
+            color: #e74c3c;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-clear:hover { background: #e74c3c; color: #fff; }
+
+        /* ===== 历史记录列表 ===== */
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .history-table th, .history-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .history-table th {
+            background: #f5f5f5;
+            color: #555;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .history-table tr:hover { background: #fafafa; }
+        .history-table td.pred-cat { color: #e74c3c; font-weight: 600; }
+        .history-table td.pred-dog { color: #2980b9; font-weight: 600; }
+        .history-table img.thumb {
+            width: 40px; height: 40px; object-fit: cover;
+            border-radius: 6px; border: 1px solid #eee;
+        }
+
+        /* ===== 验证集案例 ===== */
+        .case-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 18px;
+        }
+        .case-card {
+            background: #fafafa;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .case-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px rgba(0,0,0,0.12); }
+        .case-card.ok { border-color: #27ae60; }
+        .case-card.fail { border-color: #e74c3c; }
+        .case-img-wrap { width: 100%; aspect-ratio: 1 / 1; overflow: hidden; background: #eee; }
+        .case-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .case-body { padding: 14px 16px 16px; }
+        .case-status { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 20px; display: inline-block; margin-bottom: 10px; }
+        .case-card.ok .case-status { background: #d4edda; color: #155724; }
+        .case-card.fail .case-status { background: #f8d7da; color: #721c24; }
+        .case-row { display: flex; justify-content: space-between; font-size: 13px; color: #555; margin: 3px 0; }
+        .case-row .val { font-weight: 600; color: #333; }
+        .case-card.ok .case-row.pred .val { color: #27ae60; }
+        .case-card.fail .case-row.pred .val { color: #e74c3c; }
+        .case-prob-mini { margin-top: 8px; display: flex; gap: 4px; height: 6px; border-radius: 3px; overflow: hidden; }
+        .case-prob-mini .p-cat { background: #e74c3c; }
+        .case-prob-mini .p-dog { background: #2980b9; }
+
+        /* ===== 顶部操作栏 ===== */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: #24292e;
+            color: #fff;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .github-link:hover { background: #1a1f23; transform: translateY(-1px); }
+        .github-link svg { width: 18px; height: 18px; }
+
+        /* ===== 拍照按钮 ===== */
+        .action-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.25s ease;
+        }
+        .btn-camera {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #fff;
+        }
+        .btn-camera:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(17,153,142,0.4); }
+
+        /* ===== 相机弹窗 ===== */
+        .camera-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            padding: 20px;
+        }
+        .camera-modal.active { display: flex; }
+        .camera-box {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 540px;
+            width: 100%;
+            text-align: center;
+        }
+        .camera-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 16px; }
+        .camera-stage {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .camera-stage video,
+        .camera-stage canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+        .camera-stage video.active,
+        .camera-stage canvas.active { display: block; }
+        .camera-switch {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.9);
+            border: none;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        .camera-switch:hover { transform: scale(1.1); }
+        .camera-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #888; font-size: 14px; gap: 8px;
+        }
+        .camera-placeholder .big-icon { font-size: 48px; }
+        .camera-controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .btn-cam {
+            padding: 11px 26px;
+            border-radius: 10px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-cam-capture {
+            background: #e74c3c; color: #fff;
+            width: 60px; height: 60px; border-radius: 50%;
+            padding: 0;
+            box-shadow: 0 4px 15px rgba(231,76,60,0.4);
+            font-size: 24px;
+        }
+        .btn-cam-capture:hover { transform: scale(1.05); }
+        .btn-cam-capture:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+        .btn-cam-secondary { background: #f0f0f0; color: #555; }
+        .btn-cam-secondary:hover { background: #e4e4e4; }
+        .btn-cam-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; }
+        .btn-cam-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+
+        @media (max-width: 650px) {
+            .container { padding: 25px 18px; }
+            h1 { font-size: 24px; }
+            .stats-bar { flex-direction: column; text-align: center; }
+            .chart-row { grid-template-columns: 1fr; }
+            .history-summary { grid-template-columns: repeat(2, 1fr); }
+            .history-table { font-size: 11px; }
+            .history-table th, .history-table td { padding: 7px 6px; }
+            .case-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+            .top-bar { flex-direction: column; gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <div style="flex:1"></div>
+            <a class="github-link" href="https://github.com/joker-7775/kc_dog_and_cat" target="_blank" rel="noopener">
+                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub 仓库
+            </a>
+        </div>
+        <h1>🐱 🐶 猫狗分类器</h1>
+        <p class="subtitle">基于 ResNet18 迁移学习 · 预测历史可追溯</p>
+
+        <!-- 模型准确率仪表盘 -->
+        <div class="stats-bar">
+            <div class="gauge" style="--acc: {{ stats.accuracy }}deg;">
+                <div class="gauge-inner">
+                    <span class="gauge-value">{{ stats.accuracy }}%</span>
+                    <span class="gauge-label">验证准确率</span>
+                </div>
+            </div>
+            <div class="stats-info">
+                <div class="stats-title">📊 模型评测 & 运行状态</div>
+                <div class="stats-detail">
+                    验证集 <span>{{ stats.total }}</span> 张图片，
+                    正确 <span>{{ stats.correct }}</span> /
+                    错误 <span class="bad">{{ stats.total - stats.correct }}</span> ·
+                    训练早停于第 15 轮
+                </div>
+            </div>
+        </div>
+
+        <!-- 上传区 -->
+        <div class="section-divider">📷 开始识别</div>
+        <div class="upload-area" id="upload-area">
+            <div class="upload-icon">📷</div>
+            <div class="upload-text">点击或拖拽图片到这里上传</div>
+            <div class="upload-hint">支持 JPG, PNG, WEBP 等常见格式</div>
+        </div>
+        <input type="file" id="file-input" accept="image/*">
+
+        <div class="action-row">
+            <button class="btn-action btn-camera" id="btn-open-camera">
+                📸 使用摄像头拍照
+            </button>
+        </div>
+
+        <!-- 相机弹窗 -->
+        <div class="camera-modal" id="camera-modal">
+            <div class="camera-box">
+                <div class="camera-title">📸 摄像头拍照</div>
+                <div class="camera-stage">
+                    <div class="camera-placeholder" id="cam-placeholder">
+                        <div class="big-icon">📷</div>
+                        <div>正在启动摄像头...</div>
+                    </div>
+                    <video id="cam-video" playsinline></video>
+                    <canvas id="cam-canvas"></canvas>
+                    <button class="camera-switch" id="cam-switch" title="切换摄像头">🔄</button>
+                </div>
+                <div class="camera-controls">
+                    <button class="btn-cam btn-cam-secondary" id="cam-cancel">取消</button>
+                    <button class="btn-cam btn-cam-capture" id="cam-capture" disabled>📷</button>
+                    <button class="btn-cam btn-cam-primary" id="cam-confirm" style="display:none">识别这张</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="preview-section" id="preview">
+            <div class="image-wrapper">
+                <img id="preview-img" src="" alt="preview">
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div style="color:#666;font-size:14px">模型推理中...</div>
+                </div>
+            </div>
+            <div class="result-box" id="result-box">
+                <div class="result-label">这是一只</div>
+                <div class="result-animal" id="result-animal"></div>
+                <div class="confidence" id="result-confidence"></div>
+                <div class="prob-bar-container">
+                    <div class="prob-row">
+                        <span class="prob-label">🐱 猫</span>
+                        <div class="prob-bar"><div class="prob-fill cat-fill" id="cat-bar" style="width:0%"></div></div>
+                        <span class="prob-value" id="cat-value">0%</span>
+                    </div>
+                    <div class="prob-row">
+                        <span class="prob-label">🐶 狗</span>
+                        <div class="prob-bar"><div class="prob-fill dog-fill" id="dog-bar" style="width:0%"></div></div>
+                        <span class="prob-value" id="dog-value">0%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="error-box" id="error-box"></div>
+            <button class="btn-retry" id="btn-retry">再测一张</button>
+        </div>
+
+        <!-- 预测历史统计 -->
+        <div class="section-divider">📈 预测历史统计</div>
+        <div id="history-empty" class="empty-history">暂无预测记录，上传图片开始积累数据吧 🚀</div>
+        <div id="history-content" style="display:none">
+            <div class="history-summary">
+                <div class="history-card"><div class="h-num" id="h-total">0</div><div class="h-label">总预测次数</div></div>
+                <div class="history-card"><div class="h-num cat" id="h-cat">0</div><div class="h-label">🐱 猫</div></div>
+                <div class="history-card"><div class="h-num dog" id="h-dog">0</div><div class="h-label">🐶 狗</div></div>
+                <div class="history-card"><div class="h-num conf" id="h-avg">0%</div><div class="h-label">平均置信度</div></div>
+            </div>
+
+            <div class="chart-row">
+                <div class="chart-box">
+                    <div class="chart-title">猫狗预测比例</div>
+                    <canvas id="pieChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">最近 30 次置信度趋势</div>
+                    <canvas id="lineChart"></canvas>
+                </div>
+            </div>
+
+            <div class="history-toolbar">
+                <button class="btn-clear" id="btn-clear">🗑 清空历史记录</button>
+            </div>
+
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>缩略图</th>
+                        <th>时间</th>
+                        <th>文件名</th>
+                        <th>预测结果</th>
+                        <th>置信度</th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody"></tbody>
+            </table>
+        </div>
+
+        <!-- 验证集案例 -->
+        <div class="section-divider">🖼️ 验证集案例</div>
+        <div class="case-grid">
+            {% for s in stats.samples %}
+            <div class="case-card {{ 'ok' if s.correct else 'fail' }}">
+                <div class="case-img-wrap"><img src="{{ s.url }}" alt="{{ s.filename }}"></div>
+                <div class="case-body">
+                    <div class="case-status">{{ '✓ 预测正确' if s.correct else '✗ 预测错误' }}</div>
+                    <div class="case-row"><span>真实</span><span class="val">{{ '🐱 猫' if s.truth == 'cat' else '🐶 狗' }}</span></div>
+                    <div class="case-row pred"><span>预测</span><span class="val">{{ '🐱 猫' if s.prediction == 'cat' else '🐶 狗' }}</span></div>
+                    <div class="case-prob-mini">
+                        <div class="p-cat" style="width: {{ s.cat_prob }}%"></div>
+                        <div class="p-dog" style="width: {{ s.dog_prob }}%"></div>
+                    </div>
+                    <div class="case-row" style="margin-top:6px">
+                        <span style="color:#e74c3c">猫 {{ s.cat_prob }}%</span>
+                        <span style="color:#2980b9">狗 {{ s.dog_prob }}%</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const preview = document.getElementById('preview');
+        const previewImg = document.getElementById('preview-img');
+        const loading = document.getElementById('loading');
+        const resultBox = document.getElementById('result-box');
+        const errorBox = document.getElementById('error-box');
+        const btnRetry = document.getElementById('btn-retry');
+        const btnClear = document.getElementById('btn-clear');
+
+        let pieChart = null;
+        let lineChart = null;
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+        btnRetry.addEventListener('click', () => reset());
+        btnClear.addEventListener('click', () => {
+            if (confirm('确定要清空所有历史记录吗？此操作不可撤销。')) {
+                fetch('/api/history/clear', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(() => refreshHistory());
+            }
+        });
+
+        ['dragenter','dragover'].forEach(evt => {
+            uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        });
+        ['dragleave','drop'].forEach(evt => {
+            uploadArea.addEventListener(evt, e => { e.preventDefault(); uploadArea.classList.remove('dragover'); });
+        });
+        uploadArea.addEventListener('drop', e => {
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+        fileInput.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) { showError('请选择图片文件'); return; }
+            const reader = new FileReader();
+            reader.onload = e => {
+                previewImg.src = e.target.result;
+                preview.classList.add('active');
+                resultBox.style.display = 'none';
+                errorBox.classList.remove('active');
+                loading.style.display = 'flex';
+                predict(file);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function predict(file) {
+            const formData = new FormData();
+            formData.append('image', file);
+            try {
+                const resp = await fetch('/predict', { method: 'POST', body: formData });
+                const data = await resp.json();
+                loading.style.display = 'none';
+                if (!resp.ok) { showError(data.error || '预测失败'); return; }
+                showResult(data);
+                refreshHistory();
+            } catch (err) {
+                loading.style.display = 'none';
+                showError('网络错误: ' + err.message);
+            }
+        }
+
+        function showResult(data) {
+            resultBox.style.display = 'block';
+            resultBox.className = 'result-box ' + data.prediction;
+            const emoji = data.prediction === 'cat' ? '🐱 猫' : '🐶 狗';
+            document.getElementById('result-animal').textContent = emoji;
+            document.getElementById('result-confidence').textContent = '置信度: ' + data.confidence + '%';
+            document.getElementById('cat-bar').style.width = data.cat_prob + '%';
+            document.getElementById('dog-bar').style.width = data.dog_prob + '%';
+            document.getElementById('cat-value').textContent = data.cat_prob + '%';
+            document.getElementById('dog-value').textContent = data.dog_prob + '%';
+        }
+
+        function showError(msg) {
+            loading.style.display = 'none';
+            errorBox.textContent = msg;
+            errorBox.classList.add('active');
+        }
+
+        function reset() {
+            preview.classList.remove('active');
+            fileInput.value = '';
+            resultBox.style.display = 'none';
+            errorBox.classList.remove('active');
+        }
+
+        function refreshHistory() {
+            fetch('/api/history').then(r => r.json()).then(data => renderHistory(data));
+        }
+
+        function renderHistory(d) {
+            if (d.total === 0) {
+                document.getElementById('history-empty').style.display = 'block';
+                document.getElementById('history-content').style.display = 'none';
+                return;
+            }
+            document.getElementById('history-empty').style.display = 'none';
+            document.getElementById('history-content').style.display = 'block';
+
+            document.getElementById('h-total').textContent = d.total;
+            document.getElementById('h-cat').textContent = d.cat_count;
+            document.getElementById('h-dog').textContent = d.dog_count;
+            document.getElementById('h-avg').textContent = d.avg_confidence + '%';
+
+            if (pieChart) pieChart.destroy();
+            pieChart = new Chart(document.getElementById('pieChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['🐱 猫', '🐶 狗'],
+                    datasets: [{
+                        data: [d.cat_count, d.dog_count],
+                        backgroundColor: ['#e74c3c', '#2980b9'],
+                        borderWidth: 2, borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { padding: 15, font: { size: 13 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const v = ctx.raw;
+                                    const pct = d.total ? (v / d.total * 100).toFixed(1) : 0;
+                                    return ctx.label + ': ' + v + ' (' + pct + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (lineChart) lineChart.destroy();
+            const chartData = d.chart;
+            const bgColors = chartData.predictions.map(p => p === 'cat' ? 'rgba(231, 76, 60, 0.6)' : 'rgba(41, 128, 185, 0.6)');
+            const bdColors = chartData.predictions.map(p => p === 'cat' ? '#e74c3c' : '#2980b9');
+
+            lineChart = new Chart(document.getElementById('lineChart'), {
+                type: 'line',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [{
+                        label: '置信度 (%)',
+                        data: chartData.confidences,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.15)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: bdColors,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 7
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const pred = chartData.predictions[ctx.dataIndex];
+                                    const emoji = pred === 'cat' ? '🐱' : '🐶';
+                                    return '置信度: ' + ctx.raw + '% ' + emoji;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { min: 50, max: 100, ticks: { callback: v => v + '%' }, grid: { color: '#f0f0f0' } },
+                        x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 0 } }
+                    }
+                }
+            });
+
+            const tbody = document.getElementById('history-tbody');
+            tbody.innerHTML = '';
+            d.recent.forEach(r => {
+                const cls = r.prediction === 'cat' ? 'pred-cat' : 'pred-dog';
+                const emoji = r.prediction === 'cat' ? '🐱' : '🐶';
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td><img class="thumb" src="' + r.image_url + '" alt=""></td>' +
+                    '<td>' + r.time + '</td>' +
+                    '<td>' + r.filename + '</td>' +
+                    '<td class="' + cls + '">' + emoji + ' ' + r.prediction + '</td>' +
+                    '<td>' + r.confidence + '%</td>';
+                tbody.appendChild(tr);
+            });
+        }
+
+        refreshHistory();
+
+        /* ===== 相机逻辑 ===== */
+        const cameraModal = document.getElementById('camera-modal');
+        const btnOpenCamera = document.getElementById('btn-open-camera');
+        const btnCamCancel = document.getElementById('cam-cancel');
+        const btnCamCapture = document.getElementById('cam-capture');
+        const btnCamConfirm = document.getElementById('cam-confirm');
+        const camVideo = document.getElementById('cam-video');
+        const camCanvas = document.getElementById('cam-canvas');
+        const camPlaceholder = document.getElementById('cam-placeholder');
+        const camSwitch = document.getElementById('cam-switch');
+
+        let camStream = null;
+        let facingMode = 'user';
+        let capturedBlob = null;
+
+        btnOpenCamera.addEventListener('click', openCamera);
+        btnCamCancel.addEventListener('click', closeCamera);
+        btnCamCapture.addEventListener('click', capturePhoto);
+        btnCamConfirm.addEventListener('click', confirmPhoto);
+        camSwitch.addEventListener('click', () => {
+            facingMode = facingMode === 'user' ? 'environment' : 'user';
+            startStream();
+        });
+
+        async function openCamera() {
+            cameraModal.classList.add('active');
+            capturedBlob = null;
+            btnCamConfirm.style.display = 'none';
+            btnCamCapture.style.display = 'inline-flex';
+            camVideo.classList.remove('active');
+            camCanvas.classList.remove('active');
+            camPlaceholder.style.display = 'flex';
+            camPlaceholder.querySelector('div:last-child').textContent = '正在启动摄像头...';
+            await startStream();
+        }
+
+        async function startStream() {
+            stopStream();
+            try {
+                camStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
+                    audio: false
+                });
+                camVideo.srcObject = camStream;
+                await camVideo.play();
+                camVideo.classList.add('active');
+                camCanvas.classList.remove('active');
+                camPlaceholder.style.display = 'none';
+                btnCamCapture.disabled = false;
+                btnCamConfirm.style.display = 'none';
+                btnCamCapture.style.display = 'inline-flex';
+            } catch (err) {
+                camPlaceholder.querySelector('div:last-child').textContent =
+                    '无法访问摄像头：' + err.message + '\n请确保使用 HTTPS 或 localhost，并已授权摄像头权限';
+                camVideo.classList.remove('active');
+                camCanvas.classList.remove('active');
+                btnCamCapture.disabled = true;
+            }
+        }
+
+        function stopStream() {
+            if (camStream) {
+                camStream.getTracks().forEach(t => t.stop());
+                camStream = null;
+            }
+        }
+
+        function closeCamera() {
+            stopStream();
+            cameraModal.classList.remove('active');
+            capturedBlob = null;
+        }
+
+        function capturePhoto() {
+            if (!camVideo.videoWidth) return;
+            camCanvas.width = camVideo.videoWidth;
+            camCanvas.height = camVideo.videoHeight;
+            const ctx = camCanvas.getContext('2d');
+            if (facingMode === 'user') {
+                ctx.translate(camCanvas.width, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(camVideo, 0, 0, camCanvas.width, camCanvas.height);
+
+            camCanvas.toBlob(blob => {
+                capturedBlob = blob;
+                camVideo.classList.remove('active');
+                camCanvas.classList.add('active');
+                btnCamCapture.style.display = 'none';
+                btnCamConfirm.style.display = 'inline-flex';
+            }, 'image/jpeg', 0.9);
+        }
+
+        function confirmPhoto() {
+            if (!capturedBlob) return;
+            const file = new File([capturedBlob], 'camera_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+            closeCamera();
+            handleFile(file);
+        }
+    </script>
+</body>
+</html>
